@@ -14,7 +14,7 @@ np.random.seed(7)
 canvas = Image.new("RGB", (W, H), (255, 255, 255))
 
 # --- photo block (large, right) ---
-PX0, PY0, PX1, PY1 = 860, 160, 1900, 1020
+PX0, PY0, PX1, PY1 = 960, 110, 1840, 1070
 pw, ph = PX1 - PX0, PY1 - PY0
 src = ImageOps.grayscale(Image.open(SRC))
 s = pw / src.width
