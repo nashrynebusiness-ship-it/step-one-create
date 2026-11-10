@@ -17,10 +17,13 @@ canvas = Image.new("RGB", (W, H), (255, 255, 255))
 PX0, PY0, PX1, PY1 = 960, 110, 1840, 1070
 pw, ph = PX1 - PX0, PY1 - PY0
 src = ImageOps.grayscale(Image.open(SRC))
-s = pw / src.width
-src = src.resize((pw, round(src.height * s)), Image.LANCZOS)
-top = int((int(sys.argv[3]) if len(sys.argv) > 3 else 270) * s)   # crop top, original px
-photo = src.crop((0, top, pw, top + ph))
+# optional args: crop top (orig px), crop width (orig px), crop centre x (orig px)
+crop_top = int(sys.argv[3]) if len(sys.argv) > 3 else 270
+crop_w = int(sys.argv[4]) if len(sys.argv) > 4 else src.width
+crop_cx = int(sys.argv[5]) if len(sys.argv) > 5 else src.width // 2
+crop_h = round(crop_w * ph / pw)
+x0 = max(0, min(src.width - crop_w, crop_cx - crop_w // 2))
+photo = src.crop((x0, crop_top, x0 + crop_w, crop_top + crop_h)).resize((pw, ph), Image.LANCZOS)
 a = np.asarray(photo).astype(np.float32) / 255
 a = np.clip(0.10 + 0.88 * (a ** 0.92), 0, 1)   # soft, lifted blacks
 canvas.paste(Image.fromarray((a * 255).astype(np.uint8)).convert("RGB"), (PX0, PY0))
