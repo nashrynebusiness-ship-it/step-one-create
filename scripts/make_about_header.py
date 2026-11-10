@@ -1,6 +1,6 @@
-"""'About me' header (2400x1260): torn paper note with handwritten list,
-paper-clipped over a natural B&W photo, on white."""
-import sys, random
+"""'About me' header (2400x1260): small torn paper note with handwritten list,
+slightly tilted and paper-clipped over a natural B&W photo, on white."""
+import sys, random, math
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -13,118 +13,133 @@ np.random.seed(7)
 
 canvas = Image.new("RGB", (W, H), (255, 255, 255))
 
-# --- photo block (right) ---
-PX0, PY0, PX1, PY1 = 1060, 70, 2250, 1110
+# --- photo block (large, right) ---
+PX0, PY0, PX1, PY1 = 780, 80, 2260, 1100
 pw, ph = PX1 - PX0, PY1 - PY0
 src = ImageOps.grayscale(Image.open(SRC))
-s = pw / src.width * 1.0
+s = pw / src.width
 src = src.resize((pw, round(src.height * s)), Image.LANCZOS)
-top = int(270 * s)
+top = int(300 * s)
 photo = src.crop((0, top, pw, top + ph))
 a = np.asarray(photo).astype(np.float32) / 255
 a = np.clip(((a ** 1.05) - 0.5) * 1.1 + 0.5, 0, 1)
-photo = Image.fromarray((a * 255).astype(np.uint8)).convert("RGB")
-canvas.paste(photo, (PX0, PY0))
+canvas.paste(Image.fromarray((a * 255).astype(np.uint8)).convert("RGB"), (PX0, PY0))
 
-# --- torn paper (left, overlapping the photo) ---
-NX0, NY0, NX1, NY1 = 230, 55, 1180, 1165
+# --- note (built flat, then tilted) ---
+NW, NH, M = 640, 900, 40                       # paper size + margin for rotation
+LW, LH = NW + 2 * M, NH + 2 * M
 
 def jag(p0, p1, n, amp):
     (x0, y0), (x1, y1) = p0, p1
-    pts = []
+    out = []
     for i in range(n):
         t = i / n
         x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
         o = random.uniform(-amp, amp)
         if x0 == x1: x += o
         else: y += o
-        pts.append((x, y))
-    return pts
+        out.append((x, y))
+    return out
 
-poly = (jag((NX0, NY0), (NX1, NY0), 160, 7) + jag((NX1, NY0), (NX1, NY1), 180, 7)
-        + jag((NX1, NY1), (NX0, NY1), 160, 7) + jag((NX0, NY1), (NX0, NY0), 180, 7))
-mask = Image.new("L", (W, H), 0)
+c = [(M, M), (M + NW, M), (M + NW, M + NH), (M, M + NH)]
+poly = jag(c[0], c[1], 130, 4) + jag(c[1], c[2], 170, 4) + jag(c[2], c[3], 130, 4) + jag(c[3], c[0], 170, 4)
+mask = Image.new("L", (LW, LH), 0)
 ImageDraw.Draw(mask).polygon(poly, fill=255)
-mask = mask.filter(ImageFilter.GaussianBlur(1.2))
+mask = mask.filter(ImageFilter.GaussianBlur(0.8))
 
-# paper texture: warm off-white with soft fibrous noise
-noise = np.random.normal(0, 1, (H // 2, W // 2)).astype(np.float32)
-noise = np.asarray(Image.fromarray(((noise * 40) + 128).clip(0, 255).astype(np.uint8))
-                   .resize((W, H)).filter(ImageFilter.GaussianBlur(1.5))).astype(np.float32)
-emb = np.asarray(Image.fromarray(noise.astype(np.uint8)).filter(ImageFilter.EMBOSS)).astype(np.float32)
-base = np.array([238, 235, 226], np.float32)
-tex = base[None, None, :] + ((emb - 128) * 0.35)[..., None] + ((noise - 128) * 0.08)[..., None]
-paper = Image.fromarray(tex.clip(0, 255).astype(np.uint8))
+# paper texture: warm off-white, fine fibres
+noise = np.random.normal(0, 1, (LH // 2, LW // 2)).astype(np.float32)
+noise_img = Image.fromarray(((noise * 40) + 128).clip(0, 255).astype(np.uint8)).resize((LW, LH)).filter(ImageFilter.GaussianBlur(1.2))
+nz = np.asarray(noise_img).astype(np.float32)
+emb = np.asarray(noise_img.filter(ImageFilter.EMBOSS)).astype(np.float32)
+base = np.array([240, 237, 229], np.float32)
+tex = base + ((emb - 128) * 0.28)[..., None] + ((nz - 128) * 0.06)[..., None]
+note = Image.fromarray(tex.clip(0, 255).astype(np.uint8)).convert("RGBA")
 
-# deckled edge: slightly lighter, fuzzy rim
-rim = mask.filter(ImageFilter.MinFilter(9))
-edge = ImageOps.invert(rim).point(lambda v: 255 if v > 0 else 0)
-edge = Image.composite(edge, Image.new("L", (W, H), 0), mask).filter(ImageFilter.GaussianBlur(3))
-paper = Image.composite(Image.new("RGB", (W, H), (248, 246, 240)), paper, edge.point(lambda v: v // 2))
-
-shadow = mask.filter(ImageFilter.GaussianBlur(14)).point(lambda v: int(v * 0.35))
-canvas = Image.composite(Image.new("RGB", (W, H), (60, 60, 60)),
-                         canvas, shadow.transform(
-                             (W, H), Image.AFFINE, (1, 0, -6, 0, 1, -10)))
-canvas = Image.composite(paper, canvas, mask)
-
-# --- handwriting ---
-d = ImageDraw.Draw(canvas)
-
-def spaced(x, y, text, font, track=4):
+# handwriting
+d = ImageDraw.Draw(note)
+def spaced(x, y, text, font, track=3):
     for ch in text:
         d.text((x, y), ch, font=font, fill=INK)
         x += d.textlength(ch, font=font) + track
     return x
 
-title = ImageFont.truetype(HAND, 76)
-body = ImageFont.truetype(HAND, 50)
+title = ImageFont.truetype(HAND, 52)
+body = ImageFont.truetype(HAND, 33)
 
-tx, ty = 360, 130
-end = spaced(tx, ty, "ABOUT ME", title, 6)
-d.line([(NX0 + 70, ty + 108), (end + 120, ty + 104)], fill=INK, width=3)
+tx, ty = M + 90, M + 60
+end = spaced(tx, ty, "ABOUT ME", title, 4)
+d.line([(M + 50, ty + 74), (end + 70, ty + 71)], fill=INK, width=2)
 
 lines = ["NASH, I'M THE FOUNDER", "BASED IN VANCOUVER", None,
          "PERSONAL BRANDING", "1:1 STRATEGY CALLS", "STEP ONE CREATE",
-         "    COACHING COMMUNITY", "DIGITAL STRATEGY", "SOCIAL MEDIA MANAGEMENT",
+         "~COACHING COMMUNITY", "DIGITAL STRATEGY", "SOCIAL MEDIA MANAGEMENT",
          "CONTENT MARKETING", "CREATIVE STRATEGY"]
-y = 300
+y = M + 190
+bx = M + 80
 for t in lines:
     if t is None:
-        y += 40
+        y += 28
         continue
-    if not t.startswith("    "):
-        d.ellipse([355, y + 36, 365, y + 46], fill=INK)
-        spaced(392, y, t, body, 3)
+    if t.startswith("~"):
+        spaced(bx + 24, y, t[1:], body, 2)
     else:
-        spaced(392, y, t.strip(), body, 3)
-    y += 66
+        d.ellipse([bx, y + 23, bx + 7, y + 30], fill=INK)
+        spaced(bx + 24, y, t, body, 2)
+    y += 50
+spaced(M + 250, y + 40, "AND STILL BUILDING...", body, 2)
 
-spaced(560, y + 40, "AND STILL BUILDING...", body, 3)
+note.putalpha(mask)
+ANG = 1.4                                      # gentle tilt
+note = note.rotate(ANG, resample=Image.BICUBIC, expand=True)
+NX, NY = 300, 150
+shadow_a = note.getchannel("A").filter(ImageFilter.GaussianBlur(10)).point(lambda v: int(v * 0.28))
+shadow = Image.new("RGBA", note.size, (40, 40, 40, 0)); shadow.putalpha(shadow_a)
+canvas = canvas.convert("RGBA")
+canvas.alpha_composite(shadow, (NX + 5, NY + 9))
+canvas.alpha_composite(note, (NX, NY))
+
+# --- small paperclip on the note's top edge (drawn 4x, downsampled) ---
+def clip_path():
+    pts = []
+    def line(a, b, n=20):
+        for i in range(n + 1):
+            t = i / n
+            pts.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    def arc(cx, cy, r, a0, a1, n=30):
+        for i in range(n + 1):
+            a = math.radians(a0 + (a1 - a0) * i / n)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    line((10, 92), (10, 24)); arc(17, 24, 7, 180, 360)
+    line((24, 24), (24, 108)); arc(12, 108, 12, 0, 180)
+    line((0, 108), (0, 17)); arc(17, 17, 17, 180, 360)
+    line((34, 17), (34, 84))
+    return pts
+
+def paste_clip(x, y, scale=0.85, ss=4):
+    k = scale * ss
+    pad = 6 * ss
+    lw, lh = int(34 * k + 2 * pad), int(120 * k + 2 * pad)
+    lay = Image.new("RGBA", (lw, lh), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lay)
+    P = [(px * k + pad, py * k + pad) for px, py in clip_path()]
+    ld.line([(px + 2 * ss, py + 3 * ss) for px, py in P], fill=(0, 0, 0, 55), width=int(2.6 * ss), joint="curve")
+    ld.line(P, fill=(95, 97, 102, 255), width=int(2.6 * ss), joint="curve")
+    ld.line([(px - 0.5 * ss, py - 0.5 * ss) for px, py in P], fill=(205, 207, 210, 200), width=int(0.9 * ss), joint="curve")
+    lay = lay.resize((lw // ss, lh // ss), Image.LANCZOS).rotate(ANG, resample=Image.BICUBIC, expand=True)
+    canvas.alpha_composite(lay, (x, y))
+
+paste_clip(NX + M + NW - 150, NY + 2)
 
 # stay tuned (under the photo)
-small = ImageFont.truetype(HAND, 52)
+cd = ImageDraw.Draw(canvas)
+small = ImageFont.truetype(HAND, 40)
 st = "stay tuned for more!"
-w = sum(d.textlength(c, font=small) + 4 for c in st)
-spaced(PX1 - w, PY1 + 40, st, small, 4)
+w = sum(cd.textlength(ch, font=small) + 3 for ch in st)
+x = PX1 - w
+for ch in st:
+    cd.text((x, PY1 + 40), ch, font=small, fill=INK)
+    x += cd.textlength(ch, font=small) + 3
 
-# --- paperclip on the paper's top edge ---
-def clip(cx, cy, scale=1.0):
-    col, wd = (70, 70, 72), 5
-    def u(x0, x1, ytop, ybot):
-        r = (x1 - x0) / 2
-        d.arc([x0, ybot - 2 * r, x1, ybot], 0, 180, fill=col, width=wd)
-        d.arc([x0, ytop, x1, ytop + 2 * r], 180, 360, fill=col, width=wd)
-    # outer loop
-    d.arc([cx - 30, cy - 10, cx + 30, cy + 50], 180, 360, fill=col, width=wd)
-    d.line([(cx - 30, cy + 20), (cx - 30, cy + 200)], fill=col, width=wd)
-    d.line([(cx + 30, cy + 20), (cx + 30, cy + 160)], fill=col, width=wd)
-    d.arc([cx - 30, cy + 170, cx + 20, cy + 230], 0, 180, fill=col, width=wd)
-    d.line([(cx + 20, cy + 200), (cx + 20, cy + 50)], fill=col, width=wd)
-    d.arc([cx - 18, cy + 30, cx + 20, cy + 68], 180, 360, fill=col, width=wd)
-    d.line([(cx - 18, cy + 49), (cx - 18, cy + 160)], fill=col, width=wd)
-
-clip(1010, 20)
-
-canvas.save(OUT)
-print("saved", OUT, canvas.size, "list ends y", y)
+canvas.convert("RGB").save(OUT)
+print("saved", OUT, canvas.size, "list ends y", y, "of", M + NH)
