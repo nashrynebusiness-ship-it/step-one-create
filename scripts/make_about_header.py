@@ -14,19 +14,19 @@ np.random.seed(7)
 canvas = Image.new("RGB", (W, H), (255, 255, 255))
 
 # --- photo block (large, right) ---
-PX0, PY0, PX1, PY1 = 780, 80, 2260, 1100
+PX0, PY0, PX1, PY1 = 860, 160, 1900, 1020
 pw, ph = PX1 - PX0, PY1 - PY0
 src = ImageOps.grayscale(Image.open(SRC))
 s = pw / src.width
 src = src.resize((pw, round(src.height * s)), Image.LANCZOS)
-top = int(300 * s)
+top = int(270 * s)
 photo = src.crop((0, top, pw, top + ph))
 a = np.asarray(photo).astype(np.float32) / 255
-a = np.clip(((a ** 1.05) - 0.5) * 1.1 + 0.5, 0, 1)
+a = np.clip(0.10 + 0.88 * (a ** 0.92), 0, 1)   # soft, lifted blacks
 canvas.paste(Image.fromarray((a * 255).astype(np.uint8)).convert("RGB"), (PX0, PY0))
 
 # --- note (built flat, then tilted) ---
-NW, NH, M = 640, 900, 40                       # paper size + margin for rotation
+NW, NH, M = 520, 760, 40                       # paper size + margin for rotation
 LW, LH = NW + 2 * M, NH + 2 * M
 
 def jag(p0, p1, n, amp):
@@ -64,35 +64,35 @@ def spaced(x, y, text, font, track=3):
         x += d.textlength(ch, font=font) + track
     return x
 
-title = ImageFont.truetype(HAND, 52)
-body = ImageFont.truetype(HAND, 33)
+title = ImageFont.truetype(HAND, 44)
+body = ImageFont.truetype(HAND, 27)
 
-tx, ty = M + 90, M + 60
+tx, ty = M + 70, M + 52
 end = spaced(tx, ty, "ABOUT ME", title, 4)
-d.line([(M + 50, ty + 74), (end + 70, ty + 71)], fill=INK, width=2)
+d.line([(M + 40, ty + 64), (end + 60, ty + 61)], fill=INK, width=2)
 
 lines = ["NASH, I'M THE FOUNDER", "BASED IN VANCOUVER", None,
          "PERSONAL BRANDING", "1:1 STRATEGY CALLS", "STEP ONE CREATE",
          "~COACHING COMMUNITY", "DIGITAL STRATEGY", "SOCIAL MEDIA MANAGEMENT",
          "CONTENT MARKETING", "CREATIVE STRATEGY"]
-y = M + 190
-bx = M + 80
+y = M + 165
+bx = M + 62
 for t in lines:
     if t is None:
-        y += 28
+        y += 22
         continue
     if t.startswith("~"):
-        spaced(bx + 24, y, t[1:], body, 2)
+        spaced(bx + 20, y, t[1:], body, 2)
     else:
-        d.ellipse([bx, y + 23, bx + 7, y + 30], fill=INK)
-        spaced(bx + 24, y, t, body, 2)
-    y += 50
-spaced(M + 250, y + 40, "AND STILL BUILDING...", body, 2)
+        d.ellipse([bx, y + 19, bx + 6, y + 25], fill=INK)
+        spaced(bx + 20, y, t, body, 2)
+    y += 42
+spaced(M + 200, y + 34, "AND STILL BUILDING...", body, 2)
 
 note.putalpha(mask)
 ANG = 1.4                                      # gentle tilt
 note = note.rotate(ANG, resample=Image.BICUBIC, expand=True)
-NX, NY = 300, 150
+NX, NY = 460, 200
 shadow_a = note.getchannel("A").filter(ImageFilter.GaussianBlur(10)).point(lambda v: int(v * 0.28))
 shadow = Image.new("RGBA", note.size, (40, 40, 40, 0)); shadow.putalpha(shadow_a)
 canvas = canvas.convert("RGBA")
@@ -116,7 +116,7 @@ def clip_path():
     line((34, 17), (34, 84))
     return pts
 
-def paste_clip(x, y, scale=0.85, ss=4):
+def paste_clip(x, y, scale=0.72, ss=4):
     k = scale * ss
     pad = 6 * ss
     lw, lh = int(34 * k + 2 * pad), int(120 * k + 2 * pad)
@@ -129,16 +129,16 @@ def paste_clip(x, y, scale=0.85, ss=4):
     lay = lay.resize((lw // ss, lh // ss), Image.LANCZOS).rotate(ANG, resample=Image.BICUBIC, expand=True)
     canvas.alpha_composite(lay, (x, y))
 
-paste_clip(NX + M + NW - 150, NY + 2)
+paste_clip(NX + M + NW - 120, NY + 6)
 
 # stay tuned (under the photo)
 cd = ImageDraw.Draw(canvas)
-small = ImageFont.truetype(HAND, 40)
+small = ImageFont.truetype(HAND, 34)
 st = "stay tuned for more!"
 w = sum(cd.textlength(ch, font=small) + 3 for ch in st)
 x = PX1 - w
 for ch in st:
-    cd.text((x, PY1 + 40), ch, font=small, fill=INK)
+    cd.text((x, PY1 + 30), ch, font=small, fill=INK)
     x += cd.textlength(ch, font=small) + 3
 
 canvas.convert("RGB").save(OUT)
